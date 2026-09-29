@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weather Commodity Signals</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg:        #0f1117;
+    --surface:   #16181f;
+    --surface2:  #1e2028;
+    --border:    #2a2d38;
+    --border2:   #363944;
+    --text:      #e8eaf0;
+    --muted:     #6b7080;
+    --dim:       #9499a8;
+    --bull:      #e05252;
+    --bull-bg:   #2a1818;
+    --bull-dim:  #8c3333;
+    --bear:      #3dbd86;
+    --bear-bg:   #0f2520;
+    --bear-dim:  #257055;
+    --neut:      #6b7080;
+    --neut-bg:   #1a1c24;
+    --amber:     #d4a336;
+    --amber-bg:  #241d0e;
+    --radius:    6px;
+    --radius-lg: 10px;
+    --mono:      'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'Inter', 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── Layout ── */
+  .shell { max-width: 1200px; margin: 0 auto; padding: 0 24px 60px; }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 0 18px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .logo {
+    width: 32px; height: 32px;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .header-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--bear);
+    box-shadow: 0 0 6px var(--bear);
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .run-id { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
+  /* ── Error / Loading states ── */
+  .state-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 48px 32px;
+    text-align: center;
+    color: var(--muted);
+  }
+  .state-box h2 { font-size: 14px; font-weight: 500; color: var(--dim); margin-bottom: 8px; }
+  .state-box code {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--surface2); padding: 8px 12px;
+    border-radius: var(--radius); display: inline-block;
+    margin-top: 12px; color: var(--dim); border: 1px solid var(--border);
+  }
+
+  /* ── KPI row ── */
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+  }
+  .kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+  .kpi-val { font-size: 22px; font-weight: 700; font-family: var(--mono); letter-spacing: -0.02em; }
+  .kpi-sub { font-size: 11px; color: var(--dim); margin-top: 3px; }
+  .kpi-val.bull { color: var(--bull); }
+  .kpi-val.bear { color: var(--bear); }
+  .kpi-val.ok   { color: var(--bear); }
+
+  /* ── Filter pills ── */
+  .filter-row { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .pill {
+    padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
+    cursor: pointer; border: 1px solid var(--border); background: transparent;
+    color: var(--dim); transition: all .12s; white-space: nowrap;
+  }
+  .pill:hover { border-color: var(--border2); color: var(--text); }
+  .pill.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+  /* ── Signal cards ── */
+  .sig-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+  @media (max-width: 900px) { .sig-grid { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 560px) { .sig-grid { grid-template-columns: 1fr; } .kpi-row { grid-template-columns: repeat(2,1fr); } }
+
+  .sig-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+    position: relative;
+    overflow: hidden;
+  }
+  .sig-card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px;
+    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  }
+  .sig-card.bull::before { background: var(--bull); }
+  .sig-card.bear::before { background: var(--bear); }
+  .sig-card.neut::before { background: var(--border2); }
+  .sig-card:hover { border-color: var(--border2); background: var(--surface2); }
+  .sig-card.selected { border-color: var(--border2); background: var(--surface2); }
+
+  .sig-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+  .sig-ticker { font-size: 18px; font-weight: 700; font-family: var(--mono); letter-spacing: -0.02em; }
+  .sig-name { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+  .dir-pill {
+    font-size: 10px; font-weight: 700; padding: 3px 7px;
+    border-radius: 4px; letter-spacing: .04em;
+  }
+  .dir-pill.bull { background: var(--bull-bg); color: var(--bull); border: 1px solid var(--bull-dim); }
+  .dir-pill.bear { background: var(--bear-bg); color: var(--bear); border: 1px solid var(--bear-dim); }
+  .dir-pill.neut { background: var(--neut-bg); color: var(--neut); border: 1px solid var(--border2); }
+
+  .score-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+  .score-num {
+    font-size: 26px; font-weight: 800; font-family: var(--mono);
+    letter-spacing: -0.03em; min-width: 64px;
+  }
+  .score-num.bull { color: var(--bull); }
+  .score-num.bear { color: var(--bear); }
+  .score-num.neut { color: var(--dim); }
+
+  .bar-track {
+    flex: 1; height: 5px; background: var(--surface2);
+    border-radius: 3px; position: relative; overflow: hidden;
+  }
+  .bar-mid { position: absolute; left: 50%; top: 0; width: 1px; height: 100%; background: var(--border2); }
+  .bar-fill { position: absolute; height: 100%; border-radius: 3px; top: 0; transition: width .4s; }
+  .bar-fill.bull { background: var(--bull); right: 50%; }
+  .bar-fill.bear { background: var(--bear); left: 50%; }
+
+  .sig-meta { font-size: 11px; color: var(--muted); }
+  .sig-headline { font-size: 11px; color: var(--dim); line-height: 1.45; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+  /* ── Detail drawer ── */
+  .detail {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin-bottom: 10px;
+    animation: slideDown .15s ease;
+  }
+  @keyframes slideDown { from { opacity:0; transform: translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+
+  .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .detail-title { font-size: 14px; font-weight: 600; }
+  .detail-close {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    font-size: 11px; padding: 4px 10px; border-radius: var(--radius); cursor: pointer;
+    transition: border-color .12s, color .12s;
+  }
+  .detail-close:hover { border-color: var(--border2); color: var(--text); }
+
+  .region-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .region-table th {
+    text-align: left; padding: 7px 10px; font-size: 10px; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+    border-bottom: 1px solid var(--border);
+  }
+  .region-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .region-table tr:last-child td { border-bottom: none; }
+  .region-table td:nth-child(3),
+  .region-table td:nth-child(4),
+  .region-table td:nth-child(5) { font-family: var(--mono); font-size: 11px; }
+
+  .crit-tag {
+    font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
+    background: var(--amber-bg); color: var(--amber); border: 1px solid #4a3512;
+    margin-left: 5px; letter-spacing: .02em;
+  }
+  .hot { color: var(--bull); }
+  .cool { color: #5ab4e8; }
+  .dry  { color: var(--amber); }
+  .wet  { color: var(--bear); }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin: 28px 0 12px;
+  }
+
+  /* ── Region grid ── */
+  .region-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+  @media (max-width: 900px) { .region-grid { grid-template-columns: repeat(2,1fr); } }
+
+  .region-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 13px 14px;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .region-icon {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+  }
+  .region-icon.stress   { background: var(--bull-bg); border: 1px solid var(--bull-dim); }
+  .region-icon.ok       { background: var(--bear-bg); border: 1px solid var(--bear-dim); }
+  .region-icon.normal   { background: var(--neut-bg); border: 1px solid var(--border2); }
+  .region-name  { font-size: 12px; font-weight: 600; }
+  .region-country { font-size: 10px; color: var(--muted); }
+  .region-stats { font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.6; }
+  .region-score {
+    font-size: 12px; font-weight: 700; font-family: var(--mono);
+    margin-top: 4px;
+  }
+
+  /* ── Chart ── */
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin-top: 8px;
+  }
+  .chart-label { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+  .chart-wrap { position: relative; width: 100%; height: 220px; }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 40px; padding-top: 16px;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">🌦</div>
+      <div>
+        <h1>Weather commodity signals</h1>
+        <div class="header-sub" id="headerSub">Loading…</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-dot" id="statusDot" style="display:none"></div>
+      <div class="run-id" id="runId"></div>
+    </div>
+  </div>
+
+  <div id="mainContent">
+    <div class="state-box">
+      <h2>Loading signal data…</h2>
+      <p>Reading <code>../data/signals_latest.json</code></p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const DATA_PATH = '../data/signals_latest.json';
+
+async function loadData() {
+  try {
+    const resp = await fetch(DATA_PATH);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+function cls(score) {
+  return score <= -25 ? 'bull' : score >= 25 ? 'bear' : 'neut';
+}
+function dirLabel(d) {
+  return d === 'BULLISH' ? 'BULLISH' : d === 'BEARISH' ? 'BEARISH' : 'NEUTRAL';
+}
+function fmtScore(s) {
+  return (s > 0 ? '+' : '') + s.toFixed(1);
+}
+function fmtTemp(t) {
+  const dir = t > 0 ? 'above' : 'below';
+  const cls = t > 0 ? 'hot' : 'cool';
+  return `<span class="${cls}">${t > 0 ? '+' : ''}${t.toFixed(1)}°C ${dir} norm</span>`;
+}
+function fmtPrecip(p) {
+  const dir = p > 0 ? 'above' : 'below';
+  const cls = p < 0 ? 'dry' : 'wet';
+  return `<span class="${cls}">${p > 0 ? '+' : ''}${p.toFixed(0)}% ${dir} norm</span>`;
+}
+
+let selectedTicker = null;
+let allSignals = {};
+let allRegions = {};
+let activeSector = 'all';
+
+function renderKPIs(data) {
+  const sigs = Object.values(data.commodity_signals);
+  const strongest = sigs.reduce((a, b) => Math.abs(a.signal_score) > Math.abs(b.signal_score) ? a : b);
+  const regions = Object.values(data.region_anomalies);
+  const worstRegion = regions.reduce((a, b) => a.composite_score < b.composite_score ? a : b);
+  const critCount = regions.filter(r => r.is_critical_month).length;
+  const coverage = (data.pipeline_health.fetch_success_rate * 100).toFixed(0);
+  const sCls = cls(strongest.signal_score);
+
+  return `<div class="kpi-row">
+    <div class="kpi">
+      <div class="kpi-label">Strongest signal</div>
+      <div class="kpi-val ${sCls}">${strongest.ticker}</div>
+      <div class="kpi-sub">${strongest.name} — ${strongest.signal_direction} ${fmtScore(strongest.signal_score)}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Most stressed region</div>
+      <div class="kpi-val bull" style="font-size:14px;padding-top:4px">${worstRegion.region_name}</div>
+      <div class="kpi-sub">Score ${fmtScore(worstRegion.composite_score)} · temp ${worstRegion.temp_anomaly_c > 0 ? '+' : ''}${worstRegion.temp_anomaly_c.toFixed(1)}°C</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Critical months active</div>
+      <div class="kpi-val ${critCount > 0 ? 'bull' : 'ok'}">${critCount}</div>
+      <div class="kpi-sub">${regions.filter(r => r.is_critical_month).map(r => r.region_name.split('–').pop().trim()).join(', ') || 'None'}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Data coverage</div>
+      <div class="kpi-val ok">${coverage}%</div>
+      <div class="kpi-sub">${data.pipeline_health.regions_fetched}/${data.pipeline_health.regions_total} regions · ${data.lookback_days}d window</div>
+    </div>
+  </div>`;
+}
+
+function renderSigCard(sig) {
+  const c = cls(sig.signal_score);
+  const absScore = Math.abs(sig.signal_score);
+  const barWidth = Math.min(absScore, 100) / 2;
+  const selected = selectedTicker === sig.ticker ? ' selected' : '';
+  return `<div class="sig-card ${c}${selected}" id="card-${sig.ticker}" onclick="toggleDetail('${sig.ticker}')">
+    <div class="sig-top">
+      <div>
+        <div class="sig-ticker">${sig.ticker}</div>
+        <div class="sig-name">${sig.name} · ${sig.sector}</div>
+      </div>
+      <span class="dir-pill ${c}">${dirLabel(sig.signal_direction)}</span>
+    </div>
+    <div class="score-row">
+      <div class="score-num ${c}">${fmtScore(sig.signal_score)}</div>
+      <div class="bar-track">
+        <div class="bar-mid"></div>
+        <div class="bar-fill ${c}" style="width:${barWidth}%"></div>
+      </div>
+    </div>
+    <div class="sig-meta">${sig.confidence} confidence · ${(sig.data_coverage * 100).toFixed(0)}% coverage · ${sig.region_contributions.length} region${sig.region_contributions.length > 1 ? 's' : ''}</div>
+    <div class="sig-headline">${sig.headline}</div>
+  </div>`;
+}
+
+function renderDetail(ticker) {
+  const sig = allSignals[ticker];
+  const rows = sig.region_contributions.map(rc => {
+    const tc = rc.temp_anomaly_c > 0 ? 'hot' : 'cool';
+    const pc = rc.precip_anomaly_pct < 0 ? 'dry' : 'wet';
+    const crit = rc.is_critical_month ? '<span class="crit-tag">CRITICAL</span>' : '';
+    const scoreC = cls(rc.composite_score);
+    return `<tr>
+      <td>${rc.region_name}${crit}<br><span style="font-size:10px;color:var(--muted)">${rc.country}</span></td>
+      <td>${(rc.weight * 100).toFixed(0)}%</td>
+      <td class="${tc}">${rc.temp_anomaly_c > 0 ? '+' : ''}${rc.temp_anomaly_c.toFixed(1)}°C</td>
+      <td class="${pc}">${rc.precip_anomaly_pct > 0 ? '+' : ''}${rc.precip_anomaly_pct.toFixed(0)}%</td>
+      <td style="color:var(--${scoreC === 'neut' ? 'dim' : scoreC})">${fmtScore(rc.composite_score)}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="detail" id="detail-panel">
+    <div class="detail-header">
+      <div class="detail-title">${sig.ticker} — ${sig.name} &nbsp; <span class="dir-pill ${cls(sig.signal_score)}">${dirLabel(sig.signal_direction)} ${fmtScore(sig.signal_score)}</span></div>
+      <button class="detail-close" onclick="closeDetail()">Close ×</button>
+    </div>
+    <table class="region-table">
+      <thead><tr><th>Region</th><th>Weight</th><th>Temp</th><th>Precip</th><th>Score</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:10px">
+      ${sig.detail_lines.map(l => `<div style="font-size:11px;color:var(--dim);padding:4px 0;border-top:1px solid var(--border)">↳ ${l}</div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function toggleDetail(ticker) {
+  const existing = document.getElementById('detail-panel');
+
+  if (selectedTicker === ticker) {
+    closeDetail();
+    return;
+  }
+
+  if (selectedTicker) {
+    document.getElementById('card-' + selectedTicker)?.classList.remove('selected');
+  }
+  selectedTicker = ticker;
+  document.getElementById('card-' + ticker)?.classList.add('selected');
+
+  const grid = document.getElementById('sigGridWrap');
+  if (existing) existing.remove();
+  grid.insertAdjacentHTML('afterend', renderDetail(ticker));
+  document.getElementById('detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeDetail() {
+  if (selectedTicker) document.getElementById('card-' + selectedTicker)?.classList.remove('selected');
+  selectedTicker = null;
+  document.getElementById('detail-panel')?.remove();
+}
+
+function filterSector(sector, el) {
+  activeSector = sector;
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  closeDetail();
+  renderSigGrid();
+}
+
+function renderSigGrid() {
+  const tickers = Object.keys(allSignals).filter(t => {
+    const s = allSignals[t];
+    if (activeSector === 'all') return true;
+    if (activeSector === 'bullish') return s.signal_direction === 'BULLISH';
+    return s.sector === activeSector;
+  });
+  document.getElementById('sigGridWrap').innerHTML = tickers.map(t => renderSigCard(allSignals[t])).join('');
+}
+
+function renderRegions() {
+  return Object.values(allRegions).map(r => {
+    const s = r.composite_score;
+    const iconCls = s < -20 ? 'stress' : s > 5 ? 'ok' : 'normal';
+    const icon = s < -20 ? '⚠' : s > 5 ? '✓' : '–';
+    const scoreCls = s < -20 ? 'var(--bull)' : s > 5 ? 'var(--bear)' : 'var(--dim)';
+    const crit = r.is_critical_month ? ' <span class="crit-tag">CRITICAL</span>' : '';
+    const tc = r.temp_anomaly_c > 0 ? 'hot' : 'cool';
+    const pc = r.precip_anomaly_pct < 0 ? 'dry' : 'wet';
+    return `<div class="region-card">
+      <div class="region-icon ${iconCls}">${icon}</div>
+      <div>
+        <div class="region-name">${r.region_name}${crit}</div>
+        <div class="region-country">${r.country}</div>
+        <div class="region-stats">
+          <span class="${tc}">Temp ${r.temp_anomaly_c > 0 ? '+' : ''}${r.temp_anomaly_c.toFixed(1)}°C</span>
+          &nbsp;·&nbsp;
+          <span class="${pc}">Precip ${r.precip_anomaly_pct > 0 ? '+' : ''}${r.precip_anomaly_pct.toFixed(0)}%</span>
+        </div>
+        <div class="region-score" style="color:${scoreCls}">${fmtScore(s)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+let regionChart = null;
+
+function renderChart() {
+  const regions = Object.values(allRegions);
+  const labels = regions.map(r => r.region_name.split('–').pop().trim().split(',')[0].trim());
+  const scores = regions.map(r => r.composite_score);
+  const colors = scores.map(s => s <= -25 ? '#e05252' : s < 0 ? '#d4a336' : '#3dbd86');
+
+  if (regionChart) regionChart.destroy();
+  regionChart = new Chart(document.getElementById('regionChartCanvas'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Composite score',
+        data: scores,
+        backgroundColor: colors,
+        borderRadius: 3,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e2028',
+          borderColor: '#2a2d38',
+          borderWidth: 1,
+          titleColor: '#e8eaf0',
+          bodyColor: '#9499a8',
+          callbacks: {
+            title: items => regions[items[0].dataIndex].region_name,
+            label: item => {
+              const r = regions[item.dataIndex];
+              return [
+                `Score: ${fmtScore(r.composite_score)}`,
+                `Temp: ${r.temp_anomaly_c > 0 ? '+' : ''}${r.temp_anomaly_c.toFixed(1)}°C`,
+                `Precip: ${r.precip_anomaly_pct > 0 ? '+' : ''}${r.precip_anomaly_pct.toFixed(0)}%`,
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#6b7080', font: { size: 10 }, maxRotation: 35, autoSkip: false },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          border: { display: false }
+        },
+        y: {
+          ticks: {
+            color: '#6b7080', font: { size: 10 },
+            callback: v => (v > 0 ? '+' : '') + v
+          },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          border: { display: false },
+          title: {
+            display: true,
+            text: '← supply stress (bullish)   |   favourable supply (bearish) →',
+            color: '#6b7080', font: { size: 10 }
+          }
+        }
+      }
+    }
+  });
+}
+
+function buildPage(data) {
+  allSignals = data.commodity_signals;
+  allRegions = data.region_anomalies;
+
+  const ts = new Date(data.generated_at);
+  const tsStr = ts.toUTCString().replace('GMT', 'UTC');
+  document.getElementById('headerSub').textContent =
+    `${data.pipeline_health.regions_fetched}/${data.pipeline_health.regions_total} regions · ${data.lookback_days}d window · ${tsStr}`;
+  document.getElementById('runId').textContent = data.run_id;
+  document.getElementById('statusDot').style.display = 'block';
+
+  document.getElementById('mainContent').innerHTML = `
+    ${renderKPIs(data)}
+
+    <div class="filter-row">
+      <button class="pill active" onclick="filterSector('all',this)">All markets</button>
+      <button class="pill" onclick="filterSector('agricultural',this)">Agricultural</button>
+      <button class="pill" onclick="filterSector('soft',this)">Soft commodities</button>
+      <button class="pill" onclick="filterSector('bullish',this)">⚠ Bullish only</button>
+    </div>
+
+    <div id="sigGridWrap" class="sig-grid"></div>
+
+    <div class="section-label">Growing region conditions</div>
+    <div class="region-grid">${renderRegions()}</div>
+
+    <div class="chart-card">
+      <div class="chart-label">Region composite scores — negative = supply stress (bullish price signal), positive = favourable supply</div>
+      <div class="chart-wrap"><canvas id="regionChartCanvas" role="img" aria-label="Bar chart of composite weather scores per growing region"></canvas></div>
+    </div>
+
+    <div class="footer">
+      <span>Source: Open-Meteo · Multi-factor anomaly scoring v1.0</span>
+      <span>Negative score = supply-bullish · Positive = supply-bearish</span>
+    </div>
+  `;
+
+  renderSigGrid();
+  renderChart();
+}
+
+function showError() {
+  document.getElementById('mainContent').innerHTML = `
+    <div class="state-box">
+      <h2>Could not load signal data</h2>
+      <p>Make sure the pipeline has been run at least once and the file exists.</p>
+      <code>data/signals_latest.json</code>
+      <p style="margin-top:16px;font-size:12px;color:var(--muted)">
+        Run: <code style="margin:0;display:inline;padding:2px 6px">python run_pipeline.py</code>
+        &nbsp;then refresh this page.
+      </p>
+    </div>`;
+}
+
+loadData().then(data => {
+  if (data) buildPage(data);
+  else showError();
+});
+</script>
+</body>
+</html>
